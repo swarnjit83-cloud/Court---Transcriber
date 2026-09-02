@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Court Transcriber</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1c1e21;
+    --muted: #6b7280;
+    --border: #e2e4e8;
+    --accent: #2451c4;
+    --accent-text: #ffffff;
+    --danger: #c0392b;
+    --danger-bg: #fdecea;
+    --ok: #1e8e3e;
+    --ok-bg: #e6f4ea;
+    --warn-bg: #fff8e1;
+    --warn-text: #7a5b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --card: #1e2126;
+      --text: #eceef1;
+      --muted: #9aa1ab;
+      --border: #33373f;
+      --accent: #5b8def;
+      --accent-text: #0b1020;
+      --danger: #ff8a80;
+      --danger-bg: #3a1f1d;
+      --ok: #7ee0a3;
+      --ok-bg: #163627;
+      --warn-bg: #3a3218;
+      --warn-text: #f2d98a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 14px 14px 60px; }
+  h1 { font-size: 1.3rem; margin: 6px 0 2px; }
+  .tagline { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .card h2 {
+    font-size: 0.95rem;
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+  }
+  .card h2 .chev { transition: transform 0.15s; color: var(--muted); font-size: 0.8rem; }
+  .card.collapsed .chev { transform: rotate(-90deg); }
+  .card .body { display: block; }
+  .card.collapsed .body { display: none; }
+  label { display: block; font-size: 0.8rem; color: var(--muted); margin: 10px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); font-size: 0.95rem;
+  }
+  .row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  .row .lbl { font-size: 0.9rem; }
+  .row .sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+  .switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: var(--border); border-radius: 24px; cursor: pointer; transition: 0.15s; }
+  .slider:before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: 0.15s; }
+  input:checked + .slider { background: var(--accent); }
+  input:checked + .slider:before { transform: translateX(18px); }
+  button {
+    font-size: 0.95rem; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); padding: 12px 16px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.danger { background: var(--danger-bg); color: var(--danger); border-color: transparent; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.block { width: 100%; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-row button { flex: 1; min-width: 120px; }
+  .rec-area { text-align: center; padding: 10px 0 4px; }
+  .rec-btn {
+    width: 84px; height: 84px; border-radius: 50%; border: none; font-size: 1.6rem;
+    background: var(--danger-bg); color: var(--danger); display: inline-flex;
+    align-items: center; justify-content: center; margin: 6px auto; cursor: pointer;
+  }
+  .rec-btn.recording { background: var(--danger); color: white; animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(192,57,43,0.4);} 70% { box-shadow: 0 0 0 14px rgba(192,57,43,0);} 100% {box-shadow: 0 0 0 0 rgba(192,57,43,0);} }
+  .timer { font-variant-numeric: tabular-nums; font-size: 1.4rem; margin: 6px 0; }
+  .meter { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin: 8px 0; }
+  .meter-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.08s linear; }
+  .or-sep { text-align: center; color: var(--muted); font-size: 0.8rem; margin: 10px 0; }
+  input[type=file] { width: 100%; font-size: 0.85rem; }
+  .progress-wrap { margin: 10px 0; }
+  .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s; }
+  .step-list { font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
+  .step-list .step { padding: 3px 0; }
+  .step-list .step.active { color: var(--text); font-weight: 600; }
+  .step-list .step.done:before { content: "✓ "; color: var(--ok); }
+  .step-list .step.active:before { content: "… "; }
+  .step-list .step.pending:before { content: "○ "; opacity: 0.5; }
+  .banner { border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; margin-bottom: 12px; }
+  .banner.err { background: var(--danger-bg); color: var(--danger); }
+  .banner.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .banner.ok { background: var(--ok-bg); color: var(--ok); }
+  .hidden { display: none !important; }
+  .summary-box, .transcript-box {
+    width: 100%; min-height: 90px; border-radius: 10px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); padding: 10px; font-size: 0.95rem;
+    line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .transcript-box { min-height: 220px; }
+  .utterance { margin-bottom: 10px; }
+  .utterance .who { font-weight: 700; }
+  .utterance .ts { color: var(--muted); font-size: 0.75rem; font-weight: 400; margin-left: 6px; }
+  .small { font-size: 0.78rem; color: var(--muted); }
+  .history-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; gap: 8px;
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-item .meta { color: var(--muted); font-size: 0.72rem; }
+  .history-item .name { cursor: pointer; text-decoration: underline; }
+  a { color: var(--accent); }
+  .help p { font-size: 0.85rem; line-height: 1.5; }
+  .help code { background: var(--border); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+  .field-note { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Court Transcriber</h1>
+  <div class="tagline">English speech-to-text for long recordings — record on your phone or upload a file, get a verbatim transcript with speaker labels and a summary.</div>
+
+  <div id="banners"></div>
+
+  <!-- SETUP -->
+  <div class="card" id="card-setup">
+    <h2 onclick="toggleCard('card-setup')">Setup <span class="chev">▾</span></h2>
+    <div class="body">
+      <label for="apiKey">AssemblyAI API key</label>
+      <input type="password" id="apiKey" placeholder="Paste your API key">
+      <div class="field-note">
+        Stored only in this browser (never sent anywhere except AssemblyAI). Get a free key at
+        <a href="https://www.assemblyai.com/dashboard/signup" target="_blank" rel="noopener">assemblyai.com</a> —
+        no credit card needed to start.
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button id="btnTestKey" onclick="testApiKey()">Test key</button>
+        <button id="btnSaveKey" class="primary" onclick="saveApiKey()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- OPTIONS -->
+  <div class="card collapsed" id="card-options">
+    <h2 onclick="toggleCard('card-options')">Transcription options <span class="chev">▾</span></h2>
+    <div class="body">
+      <div class="row">
+        <div>
+          <div class="lbl">Exact wording (verbatim)</div>
+          <div class="sub">Keeps "um / uh" and filler words exactly as spoken. Turn off later for a cleaned-up read.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="optVerbatim" checked onchange="saveSettings()"><span class="slider"></span></label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="lbl">Speaker labels</div>
+          <div class="sub">Tags who's probably speaking (Speaker A / B / C…)</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="optSpeakers" checked onchange="saveSettings()"><span class="slider"></span></label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="lbl">Summary</div>
+          <div class="sub">Short AI summary generated above the full transcript</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="optSummary" checked onchange="saveSettings()"><span class="slider"></span></label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="lbl">Noise cleanup while recording</div>
+          <div class="sub">Filters low rumble/hum and evens out volume — only applies when you record inside this app (see Help)</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="optNoise" checked onchange="saveSettings()"><span class="slider"></span></label>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECORD / UPLOAD -->
+  <div class="card" id="card-input">
+    <h2 onclick="toggleCard('card-input')">New transcription <span class="chev">▾</span></h2>
+    <div class="body">
+      <div class="rec-area">
+        <button class="rec-btn" id="recBtn" onclick="toggleRecording()">●</button>
+        <div class="timer" id="recTimer">00:00:00</div>
+        <div class="meter"><div class="meter-fill" id="micMeter"></div></div>
+        <div class="small" id="recHint">Tap to start recording</div>
+      </div>
+
+      <div class="or-sep">— or —</div>
+
+      <label for="fileInput">Upload an audio file</label>
+      <input type="file" id="fileInput" accept="audio/*" onchange="handleFileChosen(event)">
+      <div class="field-note">
+        For recordings longer than 20–30 minutes, this is the more reliable option: record with your
+        phone's own voice-recorder app (it won't get interrupted if the screen locks or the browser
+        goes to the background), then upload the file here.
+      </div>
+
+      <div class="progress-wrap hidden" id="progressWrap">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="step-list" id="stepList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="card hidden" id="card-results">
+    <h2 onclick="toggleCard('card-results')">Result <span class="chev">▾</span></h2>
+    <div class="body">
+      <div id="summarySection" class="hidden">
+        <label>Summary</label>
+        <div class="summary-box" id="summaryBox" contenteditable="true"></div>
+      </div>
+      <label style="margin-top:14px;">Transcript <span class="small" id="transcriptMeta"></span></label>
+      <div class="transcript-box" id="transcriptBox" contenteditable="true"></div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button onclick="copyAll()">Copy all</button>
+        <button onclick="downloadTxt()">Download .txt</button>
+        <button onclick="downloadRtf()">Download .rtf (Word)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="card collapsed" id="card-history">
+    <h2 onclick="toggleCard('card-history')">Past transcripts <span class="chev">▾</span></h2>
+    <div class="body" id="historyList">
+      <div class="small">Nothing yet — finished transcripts are saved here on this phone/browser.</div>
+    </div>
+  </div>
+
+  <!-- HELP -->
+  <div class="card collapsed" id="card-help">
+    <h2 onclick="toggleCard('card-help')">Help &amp; how this works <span class="chev">▾</span></h2>
+    <div class="body help">
+      <p><b>What this is:</b> a single web page (no app-store install). It uses <a href="https://www.assemblyai.com" target="_blank" rel="noopener">AssemblyAI</a>'s
+      speech-to-text service to do the actual transcription — your audio is uploaded directly from
+      this page to AssemblyAI using the API key you paste in above. Nothing passes through any other
+      server.</p>
+      <p><b>Cost:</b> AssemblyAI is pay-as-you-go (their free tier includes a large number of free hours
+      to start, no card needed). Check <a href="https://www.assemblyai.com/pricing" target="_blank" rel="noopener">assemblyai.com/pricing</a>
+      for current rates — this page doesn't mark anything up, you're billed directly by AssemblyAI.</p>
+      <p><b>Multi-hour recordings:</b> AssemblyAI's transcription service accepts audio up to about
+      10 hours long in one go, so a long hearing or dictation is fine as a single upload. The
+      practical limit on this end is your phone's upload speed and whether the in-app recorder stays
+      running — see the note above about using your phone's own voice-recorder app for anything long.</p>
+      <p><b>Noise cleanup:</b> when you record directly in this app, the audio is passed through a
+      simple filter (removes low rumble/hum, evens out volume) in real time before saving. This is a
+      basic cleanup, not full noise removal — it won't erase loud background conversation, for
+      example. It does not apply to files you upload from elsewhere; AssemblyAI's own model is
+      reasonably tolerant of background noise on its own.</p>
+      <p><b>Accuracy first:</b> with "exact wording" on, the transcript keeps filler words exactly as
+      said rather than a machine-cleaned rewrite. Everything is editable — tap into the transcript or
+      summary boxes above and correct anything by hand before exporting.</p>
+      <p><b>If something errors out:</b> a "network error" right after you start a transcription
+      usually means AssemblyAI is not accepting requests directly from a browser for your account —
+      that would need a small relay step added later; the error banner will say so.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ---------------------------------------------------------------------
+   Storage / settings
+--------------------------------------------------------------------- */
+const LS_KEY_API = 'ct_api_key';
+const LS_KEY_SETTINGS = 'ct_settings';
+const LS_KEY_HISTORY = 'ct_history';
+const API_BASE = 'https://api.assemblyai.com';
+
+function loadSettings() {
+  const raw = localStorage.getItem(LS_KEY_SETTINGS);
+  const defaults = { verbatim: true, speakers: true, summary: true, noise: true };
+  if (!raw) return defaults;
+  try { return Object.assign(defaults, JSON.parse(raw)); } catch (e) { return defaults; }
+}
+function saveSettings() {
+  const s = {
+    verbatim: document.getElementById('optVerbatim').checked,
+    speakers: document.getElementById('optSpeakers').checked,
+    summary: document.getElementById('optSummary').checked,
+    noise: document.getElementById('optNoise').checked,
+  };
+  localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(s));
+}
+function applySettingsToUI() {
+  const s = loadSettings();
+  document.getElementById('optVerbatim').checked = s.verbatim;
+  document.getElementById('optSpeakers').checked = s.speakers;
+  document.getElementById('optSummary').checked = s.summary;
+  document.getElementById('optNoise').checked = s.noise;
+  const key = localStorage.getItem(LS_KEY_API) || '';
+  document.getElementById('apiKey').value = key;
+}
+function getApiKey() {
+  return document.getElementById('apiKey').value.trim() || localStorage.getItem(LS_KEY_API) || '';
+}
+function saveApiKey() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) { showBanner('err', 'Paste an API key first.'); return; }
+  localStorage.setItem(LS_KEY_API, key);
+  showBanner('ok', 'Key saved to this browser.');
+  toggleCard('card-setup', true);
+}
+
+/* ---------------------------------------------------------------------
+   UI helpers
+--------------------------------------------------------------------- */
+function toggleCard(id, forceCollapse) {
+  const el = document.getElementById(id);
+  if (forceCollapse === true) { el.classList.add('collapsed'); return; }
+  if (forceCollapse === false) { el.classList.remove('collapsed'); return; }
+  el.classList.toggle('collapsed');
+}
+function showBanner(kind, msg, sticky) {
+  const box = document.getElementById('banners');
+  const div = document.createElement('div');
+  div.className = 'banner ' + kind;
+  div.textContent = msg;
+  box.innerHTML = '';
+  box.appendChild(div);
+  if (!sticky) setTimeout(() => { if (div.parentNode) div.parentNode.removeChild(div); }, 7000);
+}
+function clearBanners() { document.getElementById('banners').innerHTML = ''; }
+function fmtTime(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+}
+function fmtMs(ms) {
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+/* ---------------------------------------------------------------------
+   Test API key
+--------------------------------------------------------------------- */
+async function testApiKey() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) { showBanner('err', 'Paste an API key first.'); return; }
+  const btn = document.getElementById('btnTestKey');
+  btn.disabled = true; btn.textContent = 'Testing…';
+  try {
+    const resp = await fetch(API_BASE + '/v2/transcript?limit=1', {
+      headers: { authorization: key }
+    });
+    if (resp.ok) {
+      showBanner('ok', 'Key works — connection to AssemblyAI succeeded.');
+      localStorage.setItem(LS_KEY_API, key);
+    } else if (resp.status === 401 || resp.status === 403) {
+      showBanner('err', 'AssemblyAI rejected this key (unauthorized). Double-check it was copied in full.');
+    } else {
+      showBanner('err', 'Unexpected response from AssemblyAI (status ' + resp.status + ').');
+    }
+  } catch (e) {
+    showBanner('err', 'Network/CORS error reaching AssemblyAI directly from the browser: ' + e.message +
+      ' — this may mean direct browser requests aren\'t allowed for this account; a small relay server would be needed.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Test key';
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Recording (with optional real-time noise cleanup filter graph)
+--------------------------------------------------------------------- */
+let mediaStream = null;
+let audioCtx = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let recTimerHandle = null;
+let recStartTime = 0;
+let analyser = null;
+let meterRaf = null;
+let recordingMimeType = 'audio/webm';
+
+function pickMimeType() {
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ];
+  for (const c of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return '';
+}
+
+async function toggleRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+async function startRecording() {
+  clearBanners();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showBanner('err', 'This browser does not support in-page recording. Use "Upload an audio file" instead.');
+    return;
+  }
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    showBanner('err', 'Microphone permission was denied or unavailable: ' + e.message);
+    return;
+  }
+
+  const settings = loadSettings();
+  let streamForRecorder = mediaStream;
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(mediaStream);
+
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 512;
+
+  if (settings.noise) {
+    const highpass = audioCtx.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 90;
+    const compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -28;
+    compressor.knee.value = 24;
+    compressor.ratio.value = 6;
+    compressor.attack.value = 0.01;
+    compressor.release.value = 0.25;
+    const dest = audioCtx.createMediaStreamDestination();
+    source.connect(highpass);
+    highpass.connect(compressor);
+    compressor.connect(dest);
+    compressor.connect(analyser);
+    streamForRecorder = dest.stream;
+  } else {
+    source.connect(analyser);
+  }
+
+  recordingMimeType = pickMimeType();
+  const opts = recordingMimeType ? { mimeType: recordingMimeType } : undefined;
+  try {
+    mediaRecorder = new MediaRecorder(streamForRecorder, opts);
+  } catch (e) {
+    mediaRecorder = new MediaRecorder(streamForRecorder);
+    recordingMimeType = mediaRecorder.mimeType || 'audio/webm';
+  }
+  recordedChunks = [];
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = onRecordingStopped;
+  mediaRecorder.start(5000);
+
+  recStartTime = Date.now();
+  document.getElementById('recBtn').classList.add('recording');
+  document.getElementById('recBtn').textContent = '■';
+  document.getElementById('recHint').textContent = 'Recording… tap to stop';
+  recTimerHandle = setInterval(() => {
+    document.getElementById('recTimer').textContent = fmtTime((Date.now() - recStartTime) / 1000);
+  }, 500);
+  runMeter();
+}
+
+function runMeter() {
+  if (!analyser) return;
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  function tick() {
+    if (!analyser) return;
+    analyser.getByteFrequencyData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i];
+    const avg = sum / data.length;
+    document.getElementById('micMeter').style.width = Math.min(100, (avg / 160) * 100) + '%';
+    meterRaf = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  if (recTimerHandle) clearInterval(recTimerHandle);
+  if (meterRaf) cancelAnimationFrame(meterRaf);
+  document.getElementById('micMeter').style.width = '0%';
+  document.getElementById('recBtn').classList.remove('recording');
+  document.getElementById('recBtn').textContent = '●';
+  document.getElementById('recHint').textContent = 'Tap to start recording';
+}
+
+function onRecordingStopped() {
+  const blob = new Blob(recordedChunks, { type: recordingMimeType || 'audio/webm' });
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  if (blob.size === 0) {
+    showBanner('err', 'No audio was captured — please try again.');
+    return;
+  }
+  const ext = recordingMimeType.includes('mp4') ? 'm4a' : (recordingMimeType.includes('ogg') ? 'ogg' : 'webm');
+  const fileName = 'recording-' + new Date().toISOString().replace(/[:.]/g, '-') + '.' + ext;
+  beginTranscription(blob, fileName);
+}
+
+/* ---------------------------------------------------------------------
+   File upload path
+--------------------------------------------------------------------- */
+function handleFileChosen(evt) {
+  const file = evt.target.files && evt.target.files[0];
+  if (!file) return;
+  clearBanners();
+  beginTranscription(file, file.name);
+  evt.target.value = '';
+}
+
+/* ---------------------------------------------------------------------
+   Transcription pipeline: upload -> create job -> poll -> render
+--------------------------------------------------------------------- */
+const STEPS = ['Uploading audio', 'Transcribing', 'Finishing up'];
+let currentStepIndex = -1;
+
+function showProgress(show) {
+  document.getElementById('progressWrap').classList.toggle('hidden', !show);
+}
+function setProgressPercent(pct) {
+  document.getElementById('progressFill').style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+function setStep(i, label) {
+  currentStepIndex = i;
+  const list = document.getElementById('stepList');
+  list.innerHTML = '';
+  STEPS.forEach((s, idx) => {
+    const div = document.createElement('div');
+    div.className = 'step ' + (idx < i ? 'done' : (idx === i ? 'active' : 'pending'));
+    div.textContent = (idx === i && label) ? label : s;
+    list.appendChild(div);
+  });
+}
+
+async function beginTranscription(fileOrBlob, fileName) {
+  const key = getApiKey();
+  if (!key) {
+    showBanner('err', 'Add your AssemblyAI API key in Setup first.');
+    toggleCard('card-setup', false);
+    return;
+  }
+  clearBanners();
+  showProgress(true);
+  setProgressPercent(0);
+  setStep(0);
+  document.getElementById('card-input').classList.remove('collapsed');
+
+  try {
+    const uploadUrl = await uploadAudio(fileOrBlob, key);
+    setStep(1);
+    setProgressPercent(100);
+    const transcriptId = await createTranscriptJob(uploadUrl, key);
+    const result = await pollTranscript(transcriptId, key);
+    setStep(2);
+    renderResult(result, fileName);
+    saveToHistory(result, fileName);
+    showBanner('ok', 'Transcription complete.');
+  } catch (e) {
+    showBanner('err', 'Failed: ' + e.message, true);
+  } finally {
+    setTimeout(() => showProgress(false), 1200);
+  }
+}
+
+function uploadAudio(fileOrBlob, key) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API_BASE + '/v2/upload');
+    xhr.setRequestHeader('authorization', key);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setProgressPercent((e.loaded / e.total) * 100);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data.upload_url);
+        } catch (e) { reject(new Error('Could not parse upload response.')); }
+      } else if (xhr.status === 401 || xhr.status === 403) {
+        reject(new Error('AssemblyAI rejected the API key during upload.'));
+      } else {
+        reject(new Error('Upload failed (status ' + xhr.status + ').'));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Network/CORS error during upload — direct browser access may not be permitted for this account.'));
+    xhr.send(fileOrBlob);
+  });
+}
+
+async function createTranscriptJob(audioUrl, key) {
+  const settings = loadSettings();
+  const body = {
+    audio_url: audioUrl,
+    language_code: 'en',
+    punctuate: true,
+    format_text: true,
+    disfluencies: !!settings.verbatim,
+    speaker_labels: !!settings.speakers,
+  };
+  if (settings.summary) {
+    body.summarization = true;
+    body.summary_model = 'informative';
+    body.summary_type = 'paragraph';
+  }
+  const resp = await fetch(API_BASE + '/v2/transcript', {
+    method: 'POST',
+    headers: { authorization: key, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let msg = 'Could not start transcription (status ' + resp.status + ').';
+    try { const j = await resp.json(); if (j && j.error) msg += ' ' + j.error; } catch (e) {}
+    throw new Error(msg);
+  }
+  const data = await resp.json();
+  return data.id;
+}
+
+function pollTranscript(id, key) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    async function check() {
+      try {
+        const resp = await fetch(API_BASE + '/v2/transcript/' + id, { headers: { authorization: key } });
+        if (!resp.ok) { reject(new Error('Status check failed (status ' + resp.status + ').')); return; }
+        const data = await resp.json();
+        if (data.status === 'completed') { resolve(data); return; }
+        if (data.status === 'error') { reject(new Error(data.error || 'AssemblyAI reported an error.')); return; }
+        const mins = Math.floor((Date.now() - started) / 60000);
+        setStep(1, 'Transcribing… (' + (mins > 0 ? mins + ' min so far' : 'just started') +
+          ' — long recordings can take a while)');
+        setTimeout(check, 5000);
+      } catch (e) {
+        reject(new Error('Network error while checking status: ' + e.message));
+      }
+    }
+    check();
+  });
+}
+
+/* ---------------------------------------------------------------------
+   Rendering results
+--------------------------------------------------------------------- */
+let lastPlainTranscript = '';
+let lastSummaryText = '';
+
+function renderResult(data, fileName) {
+  const summarySection = document.getElementById('summarySection');
+  const summaryBox = document.getElementById('summaryBox');
+  const transcriptBox = document.getElementById('transcriptBox');
+  const meta = document.getElementById('transcriptMeta');
+
+  if (data.summary) {
+    summarySection.classList.remove('hidden');
+    summaryBox.textContent = data.summary;
+    lastSummaryText = data.summary;
+  } else {
+    summarySection.classList.add('hidden');
+    lastSummaryText = '';
+  }
+
+  transcriptBox.innerHTML = '';
+  const linesForExport = [];
+
+  if (data.utterances && data.utterances.length) {
+    data.utterances.forEach(u => {
+      const div = document.createElement('div');
+      div.className = 'utterance';
+      const speakerLabel = 'Speaker ' + u.speaker;
+      div.innerHTML = '<span class="who">' + speakerLabel + '</span>' +
+        ' <span class="ts">[' + fmtMs(u.start) + ']</span><br>' +
+        escapeHtml(u.text);
+      transcriptBox.appendChild(div);
+      linesForExport.push(speakerLabel + ' [' + fmtMs(u.start) + ']\n' + u.text);
+    });
+    meta.textContent = '(' + data.utterances.length + ' speaker turns)';
+  } else {
+    transcriptBox.textContent = data.text || '(no speech detected)';
+    linesForExport.push(data.text || '');
+    meta.textContent = '';
+  }
+
+  lastPlainTranscript = linesForExport.join('\n\n');
+  document.getElementById('card-results').classList.remove('hidden');
+  document.getElementById('card-results').classList.remove('collapsed');
+  document.getElementById('card-results').scrollIntoView({ behavior: 'smooth' });
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function currentTranscriptText() {
+  // Prefer live-edited content from the contenteditable box.
+  return document.getElementById('transcriptBox').innerText || lastPlainTranscript;
+}
+function currentSummaryText() {
+  return document.getElementById('summaryBox').innerText || lastSummaryText;
+}
+
+/* ---------------------------------------------------------------------
+   Export
+--------------------------------------------------------------------- */
+function buildExportText() {
+  const summary = currentSummaryText();
+  const transcript = currentTranscriptText();
+  let out = '';
+  if (summary && summary.trim()) out += 'SUMMARY\n' + summary.trim() + '\n\n----------\n\n';
+  out += 'TRANSCRIPT\n' + transcript.trim() + '\n';
+  return out;
+}
+function copyAll() {
+  const text = buildExportText();
+  navigator.clipboard.writeText(text).then(
+    () => showBanner('ok', 'Copied to clipboard.'),
+    () => showBanner('err', 'Could not copy — select the text manually instead.')
+  );
+}
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+}
+function downloadTxt() {
+  const blob = new Blob([buildExportText()], { type: 'text/plain;charset=utf-8' });
+  triggerDownload(blob, 'transcript-' + Date.now() + '.txt');
+}
+function rtfEscape(s) {
+  return (s || '').replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}').replace(/\n/g, '\\par ');
+}
+function downloadRtf() {
+  const summary = currentSummaryText();
+  const transcript = currentTranscriptText();
+  let body = '';
+  if (summary && summary.trim()) {
+    body += '{\\b SUMMARY}\\par ' + rtfEscape(summary.trim()) + '\\par\\par ';
+  }
+  body += '{\\b TRANSCRIPT}\\par ' + rtfEscape(transcript.trim()) + '\\par ';
+  const rtf = '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Calibri;}}\\f0\\fs22 ' + body + '}';
+  const blob = new Blob([rtf], { type: 'application/rtf' });
+  triggerDownload(blob, 'transcript-' + Date.now() + '.rtf');
+}
+
+/* ---------------------------------------------------------------------
+   History (localStorage)
+--------------------------------------------------------------------- */
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY_HISTORY) || '[]'); } catch (e) { return []; }
+}
+function saveToHistory(data, fileName) {
+  const history = loadHistory();
+  const entry = {
+    id: data.id,
+    name: fileName || ('Transcript ' + new Date().toLocaleString()),
+    date: new Date().toISOString(),
+    summary: data.summary || '',
+    transcript: lastPlainTranscript,
+  };
+  history.unshift(entry);
+  while (history.length > 10) history.pop();
+  try { localStorage.setItem(LS_KEY_HISTORY, JSON.stringify(history)); }
+  catch (e) { /* storage full — drop silently, current result is still on screen */ }
+  renderHistoryList();
+}
+function renderHistoryList() {
+  const container = document.getElementById('historyList');
+  const history = loadHistory();
+  if (!history.length) {
+    container.innerHTML = '<div class="small">Nothing yet — finished transcripts are saved here on this phone/browser.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  history.forEach((h, idx) => {
+    const div = document.createElement('div');
+    div.className = 'history-item';
+    const dt = new Date(h.date);
+    div.innerHTML = '<div><div class="name" onclick="openHistoryItem(' + idx + ')">' + escapeHtml(h.name) + '</div>' +
+      '<div class="meta">' + dt.toLocaleString() + '</div></div>';
+    container.appendChild(div);
+  });
+}
+function openHistoryItem(idx) {
+  const history = loadHistory();
+  const h = history[idx];
+  if (!h) return;
+  document.getElementById('summarySection').classList.toggle('hidden', !h.summary);
+  document.getElementById('summaryBox').textContent = h.summary || '';
+  document.getElementById('transcriptBox').textContent = h.transcript || '';
+  document.getElementById('transcriptMeta').textContent = '';
+  lastPlainTranscript = h.transcript || '';
+  lastSummaryText = h.summary || '';
+  document.getElementById('card-results').classList.remove('hidden');
+  document.getElementById('card-results').classList.remove('collapsed');
+  document.getElementById('card-history').classList.add('collapsed');
+  document.getElementById('card-results').scrollIntoView({ behavior: 'smooth' });
+}
+
+/* ---------------------------------------------------------------------
+   Init
+--------------------------------------------------------------------- */
+window.addEventListener('DOMContentLoaded', () => {
+  applySettingsToUI();
+  renderHistoryList();
+  if (!localStorage.getItem(LS_KEY_API)) toggleCard('card-setup', false);
+});
+</script>
+</body>
+</html>
