@@ -147,7 +147,7 @@
 <body>
 <div class="wrap">
   <h1>Court Transcriber</h1>
-  <div class="tagline">English speech-to-text for long recordings — record on your phone or upload a file, get a verbatim transcript with speaker labels and a summary.</div>
+  <div class="tagline">Speech-to-text for long recordings (English, Punjabi, Hindi) — record on your phone or upload a file, get a verbatim transcript with speaker labels and a summary.</div>
 
   <div id="banners"></div>
 
@@ -173,6 +173,21 @@
   <div class="card collapsed" id="card-options">
     <h2 onclick="toggleCard('card-options')">Transcription options <span class="chev">▾</span></h2>
     <div class="body">
+      <div>
+        <label for="optLanguage" style="margin-top:0;">Spoken language</label>
+        <select id="optLanguage" onchange="saveSettings()" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); font-size:0.95rem;">
+          <option value="auto">Auto-detect (English / Punjabi / Hindi)</option>
+          <option value="en">English</option>
+          <option value="pa">Punjabi</option>
+          <option value="hi">Hindi</option>
+        </select>
+        <div class="field-note">
+          Auto-detect needs at least 15–20 seconds of clear speech to work reliably — on short
+          clips it often guesses wrong. If a recording keeps coming back in the wrong language
+          (or as "no speech detected"), pick the actual language here instead — AssemblyAI is
+          more accurate when told the language directly than when guessing it.
+        </div>
+      </div>
       <div class="row">
         <div>
           <div class="lbl">Exact wording (verbatim)</div>
@@ -300,7 +315,7 @@ const API_BASE = 'https://api.assemblyai.com';
 
 function loadSettings() {
   const raw = localStorage.getItem(LS_KEY_SETTINGS);
-  const defaults = { verbatim: true, speakers: true, summary: true, noise: true };
+  const defaults = { verbatim: true, speakers: true, summary: true, noise: true, language: 'en' };
   if (!raw) return defaults;
   try { return Object.assign(defaults, JSON.parse(raw)); } catch (e) { return defaults; }
 }
@@ -310,6 +325,7 @@ function saveSettings() {
     speakers: document.getElementById('optSpeakers').checked,
     summary: document.getElementById('optSummary').checked,
     noise: document.getElementById('optNoise').checked,
+    language: document.getElementById('optLanguage').value,
   };
   localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(s));
 }
@@ -319,6 +335,7 @@ function applySettingsToUI() {
   document.getElementById('optSpeakers').checked = s.speakers;
   document.getElementById('optSummary').checked = s.summary;
   document.getElementById('optNoise').checked = s.noise;
+  document.getElementById('optLanguage').value = s.language;
   const key = localStorage.getItem(LS_KEY_API) || '';
   document.getElementById('apiKey').value = key;
 }
@@ -620,31 +637,44 @@ function uploadAudio(fileOrBlob, key) {
   });
 }
 
-async function createTranscriptJob(audioUrl, key) {
-  const settings = loadSettings();
+function buildTranscriptBody(audioUrl, settings, opts) {
+  opts = opts || {};
   const body = {
     audio_url: audioUrl,
-    // Auto-detects the spoken language instead of forcing everything
-    // through the English model — a courtroom recording is very often
-    // Punjabi or Hindi (or a mix, switching mid-recording), and forcing
-    // "en" on non-English speech produced garbled/wrong text instead of
-    // a real transcript. expected_languages narrows AssemblyAI's search
-    // to the languages this court actually uses, which is both faster
-    // and less likely to misdetect than searching its full ~99-language
-    // list — add another code here (see assemblyai.com/docs, language
-    // codes like 'ur' for Urdu, etc.) if you ever need a 4th language.
-    language_detection: true,
-    language_detection_options: { expected_languages: ['en', 'pa', 'hi'] },
     punctuate: true,
     format_text: true,
-    disfluencies: !!settings.verbatim,
-    speaker_labels: !!settings.speakers,
+    disfluencies: opts.dropUnsupported ? false : !!settings.verbatim,
+    speaker_labels: opts.dropUnsupported ? false : !!settings.speakers,
   };
+  if (settings.language && settings.language !== 'auto') {
+    // A specific language was picked in Options (see the "Spoken
+    // language" selector) — AssemblyAI's own docs recommend this over
+    // auto-detection whenever you already know the language, since it
+    // skips detection entirely and just uses the right model. This is
+    // also the fix for short/quiet test clips: auto-detection needs
+    // 15-90+ seconds of clear speech to guess reliably, and on shorter
+    // audio it was defaulting to a low-confidence "English" guess.
+    body.language_code = settings.language;
+  } else {
+    // Auto-detects the spoken language instead of forcing everything
+    // through the English model — a courtroom recording is very often
+    // Punjabi or Hindi (or a mix, switching mid-recording). expected_
+    // languages narrows AssemblyAI's search to the languages this court
+    // actually uses, which is both faster and less likely to misdetect
+    // than searching its full ~99-language list — add another code here
+    // (see assemblyai.com/docs, e.g. 'ur' for Urdu) for a 4th language.
+    body.language_detection = true;
+    body.language_detection_options = { expected_languages: ['en', 'pa', 'hi'] };
+  }
   if (settings.summary) {
     body.summarization = true;
     body.summary_model = 'informative';
     body.summary_type = 'paragraph';
   }
+  return body;
+}
+
+async function submitTranscriptJob(body, key) {
   const resp = await fetch(API_BASE + '/v2/transcript', {
     method: 'POST',
     headers: { authorization: key, 'content-type': 'application/json' },
@@ -652,11 +682,36 @@ async function createTranscriptJob(audioUrl, key) {
   });
   if (!resp.ok) {
     let msg = 'Could not start transcription (status ' + resp.status + ').';
-    try { const j = await resp.json(); if (j && j.error) msg += ' ' + j.error; } catch (e) {}
-    throw new Error(msg);
+    let errText = '';
+    try { const j = await resp.json(); if (j && j.error) { msg += ' ' + j.error; errText = j.error; } } catch (e) {}
+    const err = new Error(msg);
+    err.apiError = errText;
+    throw err;
   }
   const data = await resp.json();
   return data.id;
+}
+
+async function createTranscriptJob(audioUrl, key) {
+  const settings = loadSettings();
+  const body = buildTranscriptBody(audioUrl, settings);
+  try {
+    return await submitTranscriptJob(body, key);
+  } catch (e) {
+    // A manually-picked language (not auto-detect) makes AssemblyAI
+    // validate features up front — if "exact wording" or "speaker
+    // labels" isn't available for that language, it rejects the whole
+    // request instead of just skipping them. Retry once automatically
+    // with those two switched off rather than making you turn them off
+    // by hand and try again.
+    const isFeatureError = e.apiError && /not available in this language/i.test(e.apiError);
+    if (isFeatureError && settings.language !== 'auto') {
+      showBanner('warn', 'Exact wording / speaker labels aren\'t available for this language — continuing without them.');
+      const retryBody = buildTranscriptBody(audioUrl, settings, { dropUnsupported: true });
+      return await submitTranscriptJob(retryBody, key);
+    }
+    throw e;
+  }
 }
 
 function pollTranscript(id, key) {
