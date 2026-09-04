@@ -624,7 +624,17 @@ async function createTranscriptJob(audioUrl, key) {
   const settings = loadSettings();
   const body = {
     audio_url: audioUrl,
-    language_code: 'en',
+    // Auto-detects the spoken language instead of forcing everything
+    // through the English model — a courtroom recording is very often
+    // Punjabi or Hindi (or a mix, switching mid-recording), and forcing
+    // "en" on non-English speech produced garbled/wrong text instead of
+    // a real transcript. expected_languages narrows AssemblyAI's search
+    // to the languages this court actually uses, which is both faster
+    // and less likely to misdetect than searching its full ~99-language
+    // list — add another code here (see assemblyai.com/docs, language
+    // codes like 'ur' for Urdu, etc.) if you ever need a 4th language.
+    language_detection: true,
+    language_detection_options: { expected_languages: ['en', 'pa', 'hi'] },
     punctuate: true,
     format_text: true,
     disfluencies: !!settings.verbatim,
@@ -695,6 +705,18 @@ function renderResult(data, fileName) {
   transcriptBox.innerHTML = '';
   const linesForExport = [];
 
+  // Detected-language note (see createTranscriptJob — language is
+  // auto-detected rather than forced to English). Shown so you can spot
+  // at a glance whether it picked up the right language, since a
+  // misdetection on a short/noisy recording is possible.
+  const LANG_NAMES = { en: 'English', pa: 'Punjabi', hi: 'Hindi' };
+  let langNote = '';
+  if (data.language_code) {
+    const name = LANG_NAMES[data.language_code] || data.language_code;
+    langNote = name + (typeof data.language_confidence === 'number'
+      ? ' (' + Math.round(data.language_confidence * 100) + '% confidence)' : '');
+  }
+
   if (data.utterances && data.utterances.length) {
     data.utterances.forEach(u => {
       const div = document.createElement('div');
@@ -706,11 +728,12 @@ function renderResult(data, fileName) {
       transcriptBox.appendChild(div);
       linesForExport.push(speakerLabel + ' [' + fmtMs(u.start) + ']\n' + u.text);
     });
-    meta.textContent = '(' + data.utterances.length + ' speaker turns)';
+    meta.textContent = '(' + data.utterances.length + ' speaker turns' +
+      (langNote ? ' · ' + langNote : '') + ')';
   } else {
     transcriptBox.textContent = data.text || '(no speech detected)';
     linesForExport.push(data.text || '');
-    meta.textContent = '';
+    meta.textContent = langNote ? '(' + langNote + ')' : '';
   }
 
   lastPlainTranscript = linesForExport.join('\n\n');
