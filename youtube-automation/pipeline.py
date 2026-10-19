@@ -15,6 +15,8 @@ W, H = 1920, 1080
 OUT = Path("output")
 FONT = os.environ.get("HINDI_FONT", "fonts/NotoSansDevanagari-Bold.ttf")
 VOICE = os.environ.get("HINDI_VOICE", "hi-IN-SwaraNeural")  # or hi-IN-MadhurNeural
+PRIVACY = os.environ.get("YT_PRIVACY", "private")  # private | unlisted | public
+NICHE = os.environ.get("NICHE", "everyday money, rules, rights and how things work in India")
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
 
 PROMPT = """You write scripts for faceless Hindi explainer videos on YouTube.
@@ -132,6 +134,53 @@ def make_shorts(d, n=3):
         print(f"Short {i}: {v} ({duration(v):.0f}s)")
 
 
+CHECK_PROMPT = """You are a strict fact-checker for a Hindi explainer video script about Indian money, law, rules or
+daily-life topics. Check every factual claim, number, rate, section number and rule. Fix anything wrong or unverifiable
+(remove or soften it). Keep the same JSON structure and Hindi style. Return ONLY JSON:
+{{"confidence": "high" or "low", "issues": ["..."], "script": <the corrected full script JSON>}}
+Use "low" if the topic depends on figures or rules you cannot be sure are current (rates, limits, deadlines) or if
+you had to guess anything.
+
+Script:
+{script}"""
+
+
+def factcheck(data, d):
+    import anthropic
+    msg = anthropic.Anthropic().messages.create(model=MODEL, max_tokens=9000,
+        messages=[{"role": "user", "content": CHECK_PROMPT.format(script=json.dumps(data, ensure_ascii=False))}])
+    text = msg.content[0].text
+    r = json.loads(text[text.index("{"): text.rindex("}") + 1])
+    (d / "script.json").write_text(json.dumps(r["script"], ensure_ascii=False, indent=2), encoding="utf-8")
+    (d / "factcheck.json").write_text(json.dumps({k: r[k] for k in ("confidence", "issues")}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return r["script"], r["confidence"] == "high"
+
+
+def next_topic(done):
+    import anthropic
+    msg = anthropic.Anthropic().messages.create(model=MODEL, max_tokens=500, messages=[{"role": "user", "content":
+        f"Niche: {NICHE}. Suggest ONE new topic for a 5-7 minute Hindi explainer that Indian viewers search for often "
+        f"and that stays accurate over time (avoid rates/deadlines that change). Already covered: {json.dumps(done, ensure_ascii=False)}. "
+        'Return ONLY JSON: {"topic": "...(Hindi)", "notes": "audience and angle"}'}])
+    text = msg.content[0].text
+    return json.loads(text[text.index("{"): text.rindex("}") + 1])
+
+
+def autopilot():
+    """Pick a topic, write, fact-check, render video + Shorts, upload. No human input."""
+    df = Path("done.json")
+    done = json.loads(df.read_text(encoding="utf-8")) if df.exists() else []
+    t = next_topic(done)
+    d = OUT / slugify(t["topic"]) if slugify(t["topic"]) != "video" else OUT / f"video-{len(done)+1}"
+    d.mkdir(parents=True, exist_ok=True)
+    data, ok = factcheck(write_script(t["topic"], t["notes"], d), d)
+    done.append(t["topic"]); df.write_text(json.dumps(done, ensure_ascii=False, indent=1), encoding="utf-8")
+    if not ok:
+        (d / "REVIEW_NEEDED.txt").write_text("Fact-check confidence was low; not rendered or uploaded. See factcheck.json.")
+        print(f"Skipped (low confidence): {t['topic']}"); return
+    build_video(data, d); make_shorts(d); upload(d)
+
+
 def make(topic, notes=""):
     d = OUT / slugify(topic); d.mkdir(parents=True, exist_ok=True)
     sp = d / "script.json"
@@ -148,6 +197,9 @@ def upload(d, kids=False):
     scopes = ["https://www.googleapis.com/auth/youtube.upload"]
     d = Path(d); tok = Path("token.json")
     creds = Credentials.from_authorized_user_file(tok, scopes) if tok.exists() else None
+    if creds and not creds.valid and creds.refresh_token:
+        from google.auth.transport.requests import Request
+        creds.refresh(Request()); tok.write_text(creds.to_json())
     if not creds or not creds.valid:
         creds = InstalledAppFlow.from_client_secrets_file("client_secret.json", scopes).run_local_server(port=0)
         tok.write_text(creds.to_json())
@@ -167,23 +219,25 @@ def _upload_one(yt, f, title, desc, tags, kids):
     from googleapiclient.http import MediaFileUpload
     body = {"snippet": {"title": title, "description": desc,
                         "tags": tags, "categoryId": "27", "defaultLanguage": "hi"},
-            "status": {"privacyStatus": "private", "selfDeclaredMadeForKids": kids}}
+            "status": {"privacyStatus": PRIVACY, "selfDeclaredMadeForKids": kids}}
     req = yt.videos().insert(part="snippet,status", body=body,
                              media_body=MediaFileUpload(str(f), resumable=True))
     resp = None
     while resp is None:
         _, resp = req.next_chunk()
-    print(f"{f.name} uploaded as PRIVATE: https://youtu.be/" + resp["id"] + " - review in YouTube Studio, then publish.")
+    print(f"{f.name} uploaded as " + PRIVACY.upper() + ": https://youtu.be/" + resp["id"] + " - review in YouTube Studio.")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("make"); m.add_argument("topic"); m.add_argument("--notes", default="")
     sh = sub.add_parser("shorts"); sh.add_argument("dir"); sh.add_argument("-n", type=int, default=3)
+    sub.add_parser("autopilot")
     b = sub.add_parser("batch"); b.add_argument("csv")
     u = sub.add_parser("upload"); u.add_argument("dir"); u.add_argument("--kids", action="store_true", help="declare Made for Kids")
     a = ap.parse_args()
     if a.cmd == "make": make(a.topic, a.notes)
+    elif a.cmd == "autopilot": autopilot()
     elif a.cmd == "shorts": make_shorts(a.dir, a.n)
     elif a.cmd == "upload": upload(a.dir, a.kids)
     else:

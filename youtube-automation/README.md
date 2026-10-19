@@ -21,3 +21,18 @@ uploads risk demonetisation under YouTube's inauthentic-content policy.
 
 ## Weekly 5-hour routine
 Research and fact-check topics (1.5h), edit scripts (1.5h), review and fix videos (1h), thumbnails, upload, schedule (1h).
+
+## Hands-off mode (GitHub Actions)
+`.github/workflows/weekly-video.yml` runs `python pipeline.py autopilot` every Tuesday and Friday: it picks a new topic
+(never repeating `done.json`), writes the script, fact-checks it with a second pass, renders the video plus 3 Shorts and
+uploads them. If the fact-check confidence is low, it skips the topic and writes `REVIEW_NEEDED.txt` instead.
+
+One-time setup (about 20 minutes):
+1. Run `python pipeline.py upload` once on your computer to sign in to Google; this creates `token.json`.
+2. In Google Cloud, set the OAuth consent screen to **In production**, otherwise the login expires after 7 days.
+3. In the GitHub repo add secrets `ANTHROPIC_API_KEY`, `YT_CLIENT_SECRET` (contents of `client_secret.json`) and `YT_TOKEN` (contents of `token.json`).
+4. Optional repo variables: `NICHE`, and `YT_PRIVACY` (`private` by default).
+
+Limits to know about: YouTube locks videos uploaded through the API to **private** until the Google Cloud project passes
+YouTube's API compliance audit, so until then you must tap Publish in YouTube Studio (about 2 minutes a video). Fully
+automatic, unreviewed publishing also carries a real risk of factual errors and of demonetisation as mass-produced content.
