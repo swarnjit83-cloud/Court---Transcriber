@@ -1,0 +1,145 @@
+"""Faceless Hindi explainer video pipeline.
+
+topic -> script (Claude) -> Hindi voiceover (edge-tts) -> slides (Pillow) -> video (ffmpeg) -> private upload (YouTube API)
+
+Usage:
+  python pipeline.py make "topic" [--notes "..."]   # script + voice + video
+  python pipeline.py batch topics.csv               # make for every row
+  python pipeline.py upload output/<slug>           # upload as PRIVATE after you review
+"""
+import argparse, asyncio, csv, json, os, re, subprocess, sys
+from pathlib import Path
+
+W, H = 1920, 1080
+OUT = Path("output")
+FONT = os.environ.get("HINDI_FONT", "fonts/NotoSansDevanagari-Bold.ttf")
+VOICE = os.environ.get("HINDI_VOICE", "hi-IN-SwaraNeural")  # or hi-IN-MadhurNeural
+MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
+
+PROMPT = """You write scripts for faceless Hindi explainer videos on YouTube.
+Topic: {topic}
+Notes: {notes}
+
+Write in simple, conversational Hindi (Devanagari). Original explanation and a clear point of view, not a
+generic summary. Open with a hook, build in logical steps, end with a takeaway. Target 5-7 minutes
+(about 700-900 words of narration). State only facts you are confident are correct; where unsure, say so
+in the narration. Return ONLY JSON:
+{{"title": "...(under 70 chars, Hindi)", "description": "...(Hindi, 2-3 short paragraphs)",
+ "tags": ["..."],
+ "scenes": [{{"heading": "short on-screen heading", "bullets": ["max 3 short points"], "narration": "spoken text"}}]}}
+Use 8-12 scenes."""
+
+
+def slugify(s):
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40] or "video"
+
+
+def write_script(topic, notes, d):
+    import anthropic
+    msg = anthropic.Anthropic().messages.create(
+        model=MODEL, max_tokens=8000,
+        messages=[{"role": "user", "content": PROMPT.format(topic=topic, notes=notes or "-")}])
+    text = msg.content[0].text
+    data = json.loads(text[text.index("{"): text.rindex("}") + 1])
+    (d / "script.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return data
+
+
+async def _tts(text, path):
+    import edge_tts
+    await edge_tts.Communicate(text, VOICE).save(str(path))
+
+
+def duration(path):
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "csv=p=0", str(path)], capture_output=True, text=True, check=True)
+    return float(r.stdout.strip())
+
+
+def wrap(draw, text, font, width):
+    lines, cur = [], ""
+    for word in text.split():
+        t = (cur + " " + word).strip()
+        if draw.textlength(t, font=font) <= width:
+            cur = t
+        else:
+            lines.append(cur); cur = word
+    return lines + [cur] if cur else lines
+
+
+def slide(scene, path):
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.new("RGB", (W, H), (18, 32, 56))
+    d = ImageDraw.Draw(img)
+    big, small = ImageFont.truetype(FONT, 84), ImageFont.truetype(FONT, 54)
+    y = 150
+    for line in wrap(d, scene["heading"], big, W - 240):
+        d.text((120, y), line, font=big, fill=(255, 200, 60)); y += 110
+    y += 40
+    for b in scene.get("bullets", [])[:3]:
+        for i, line in enumerate(wrap(d, b, small, W - 300)):
+            d.text((120 if i else 120, y), ("• " if i == 0 else "  ") + line, font=small, fill=(240, 240, 240))
+            y += 80
+        y += 20
+    img.save(path)
+
+
+def build_video(data, d):
+    clips = []
+    for i, sc in enumerate(data["scenes"]):
+        mp3, png, mp4 = d / f"s{i}.mp3", d / f"s{i}.png", d / f"s{i}.mp4"
+        asyncio.run(_tts(sc["narration"], mp3))
+        slide(sc, png)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", str(png), "-i", str(mp3),
+                        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-r", "24",
+                        "-c:a", "aac", "-shortest", str(mp4)], check=True)
+        clips.append(mp4)
+    lst = d / "list.txt"
+    lst.write_text("".join(f"file '{c.name}'\n" for c in clips))
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
+                    "-c", "copy", str(d / "video.mp4")], check=True)
+    return d / "video.mp4"
+
+
+def make(topic, notes=""):
+    d = OUT / slugify(topic); d.mkdir(parents=True, exist_ok=True)
+    sp = d / "script.json"
+    data = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else write_script(topic, notes, d)
+    v = build_video(data, d)
+    print(f"Done: {v} ({duration(v)/60:.1f} min). Review script.json and the video, then run: "
+          f"python pipeline.py upload {d}")
+
+
+def upload(d, kids=False):
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
+    d = Path(d); tok = Path("token.json")
+    creds = Credentials.from_authorized_user_file(tok, scopes) if tok.exists() else None
+    if not creds or not creds.valid:
+        creds = InstalledAppFlow.from_client_secrets_file("client_secret.json", scopes).run_local_server(port=0)
+        tok.write_text(creds.to_json())
+    data = json.loads((d / "script.json").read_text(encoding="utf-8"))
+    body = {"snippet": {"title": data["title"], "description": data["description"],
+                        "tags": data["tags"], "categoryId": "27", "defaultLanguage": "hi"},
+            "status": {"privacyStatus": "private", "selfDeclaredMadeForKids": kids}}
+    req = build("youtube", "v3", credentials=creds).videos().insert(
+        part="snippet,status", body=body, media_body=MediaFileUpload(str(d / "video.mp4"), resumable=True))
+    resp = None
+    while resp is None:
+        _, resp = req.next_chunk()
+    print("Uploaded as PRIVATE: https://youtu.be/" + resp["id"] + " - review in YouTube Studio, then publish.")
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(); sub = ap.add_subparsers(dest="cmd", required=True)
+    m = sub.add_parser("make"); m.add_argument("topic"); m.add_argument("--notes", default="")
+    b = sub.add_parser("batch"); b.add_argument("csv")
+    u = sub.add_parser("upload"); u.add_argument("dir"); u.add_argument("--kids", action="store_true", help="declare Made for Kids")
+    a = ap.parse_args()
+    if a.cmd == "make": make(a.topic, a.notes)
+    elif a.cmd == "upload": upload(a.dir, a.kids)
+    else:
+        for r in csv.DictReader(open(a.csv, encoding="utf-8")): make(r["topic"], r.get("notes", ""))
