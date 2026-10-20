@@ -28,7 +28,7 @@ Research and fact-check topics (1.5h), edit scripts (1.5h), review and fix video
 uploads them. If the fact-check confidence is low, it skips the topic and writes `REVIEW_NEEDED.txt` instead.
 
 One-time setup (about 20 minutes):
-1. Run `python pipeline.py upload` once on your computer to sign in to Google; this creates `token.json`.
+1. Run `python pipeline.py login` once on your computer to sign in to Google; this creates `token.json`.
 2. In Google Cloud, set the OAuth consent screen to **In production**, otherwise the login expires after 7 days.
 3. In the GitHub repo add secrets `ANTHROPIC_API_KEY`, `YT_CLIENT_SECRET` (contents of `client_secret.json`) and `YT_TOKEN` (contents of `token.json`).
 4. Optional repo variables: `NICHE`, and `YT_PRIVACY` (`private` by default).

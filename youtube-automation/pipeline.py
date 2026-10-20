@@ -195,19 +195,26 @@ def make(topic, notes=""):
           f"python pipeline.py upload {d}")
 
 
-def upload(d, kids=False):
+def login():
+    """Sign in to Google once and save token.json."""
     from google_auth_oauthlib.flow import InstalledAppFlow
     from google.oauth2.credentials import Credentials
-    from googleapiclient.discovery import build
+    from google.auth.transport.requests import Request
     scopes = ["https://www.googleapis.com/auth/youtube.upload"]
-    d = Path(d); tok = Path("token.json")
+    tok = Path("token.json")
     creds = Credentials.from_authorized_user_file(tok, scopes) if tok.exists() else None
     if creds and not creds.valid and creds.refresh_token:
-        from google.auth.transport.requests import Request
         creds.refresh(Request()); tok.write_text(creds.to_json())
     if not creds or not creds.valid:
         creds = InstalledAppFlow.from_client_secrets_file("client_secret.json", scopes).run_local_server(port=0)
         tok.write_text(creds.to_json())
+    return creds
+
+
+def upload(d, kids=False):
+    from googleapiclient.discovery import build
+    d = Path(d)
+    creds = login()
     yt = build("youtube", "v3", credentials=creds)
     data = json.loads((d / "script.json").read_text(encoding="utf-8"))
     jobs = [(d / "video.mp4", data["title"], data["description"], data["tags"])]
@@ -237,12 +244,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("make"); m.add_argument("topic"); m.add_argument("--notes", default="")
     sh = sub.add_parser("shorts"); sh.add_argument("dir"); sh.add_argument("-n", type=int, default=3)
-    sub.add_parser("autopilot")
+    sub.add_parser("autopilot"); sub.add_parser("login")
     b = sub.add_parser("batch"); b.add_argument("csv")
     u = sub.add_parser("upload"); u.add_argument("dir"); u.add_argument("--kids", action="store_true", help="declare Made for Kids")
     a = ap.parse_args()
     if a.cmd == "make": make(a.topic, a.notes)
     elif a.cmd == "autopilot": autopilot()
+    elif a.cmd == "login": login(); print("Signed in. token.json saved.")
     elif a.cmd == "shorts": make_shorts(a.dir, a.n)
     elif a.cmd == "upload": upload(a.dir, a.kids)
     else:
