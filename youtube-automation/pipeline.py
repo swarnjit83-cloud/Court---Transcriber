@@ -92,13 +92,18 @@ def slide(scene, path, size=(W, H)):
     img.save(path)
 
 
-def build_video(data, d, name="video", size=(W, H)):
+def build_video(data, d, name="video", size=(W, H), slide_fn=None, zoom=False):
+    slide_fn = slide_fn or slide
     clips = []
     for i, sc in enumerate(data["scenes"]):
         mp3, png, mp4 = d / f"{name}_s{i}.mp3", d / f"{name}_s{i}.png", d / f"{name}_s{i}.mp4"
         asyncio.run(_tts(sc["narration"], mp3))
-        slide(sc, png, size)
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", str(png), "-i", str(mp3),
+        slide_fn(sc, png, size)
+        vf = []
+        if zoom:  # slow push-in so still images feel alive
+            frames = int(duration(mp3) * 24) + 24
+            vf = ["-vf", f"zoompan=z='min(zoom+0.0005,1.12)':d={frames}:s={size[0]}x{size[1]}:fps=24"]
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", str(png), "-i", str(mp3), *vf,
                         "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-r", "24",
                         "-c:a", "aac", "-shortest", str(mp4)], check=True)
         clips.append(mp4)
@@ -119,18 +124,18 @@ Script:
 {script}"""
 
 
-def make_shorts(d, n=3):
+def make_shorts(d, n=3, prompt=None, slide_fn=None, zoom=False):
     import anthropic
     d = Path(d)
     sp = d / "shorts.json"
     if not sp.exists():
         script = (d / "script.json").read_text(encoding="utf-8")
         msg = anthropic.Anthropic().messages.create(model=MODEL, max_tokens=6000,
-            messages=[{"role": "user", "content": SHORTS_PROMPT.format(n=n, script=script)}])
+            messages=[{"role": "user", "content": (prompt or SHORTS_PROMPT).format(n=n, script=script)}])
         text = msg.content[0].text
         sp.write_text(json.dumps(json.loads(text[text.index("{"): text.rindex("}") + 1]), ensure_ascii=False, indent=2), encoding="utf-8")
     for i, sh in enumerate(json.loads(sp.read_text(encoding="utf-8"))["shorts"], 1):
-        v = build_video(sh, d, f"short{i}", (1080, 1920))
+        v = build_video(sh, d, f"short{i}", (1080, 1920), slide_fn, zoom)
         print(f"Short {i}: {v} ({duration(v):.0f}s)")
 
 

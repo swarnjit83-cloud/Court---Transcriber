@@ -36,3 +36,11 @@ One-time setup (about 20 minutes):
 Limits to know about: YouTube locks videos uploaded through the API to **private** until the Google Cloud project passes
 YouTube's API compliance audit, so until then you must tap Publish in YouTube Studio (about 2 minutes a video). Fully
 automatic, unreviewed publishing also carries a real risk of factual errors and of demonetisation as mass-produced content.
+
+## Fiction story mode (default for the weekly run, no cost beyond the Claude API)
+`python story.py make` writes the next episode of a fictional Hindi series with a recurring cast (`cast.json`), runs a
+safety/originality check instead of a fact-check, draws every scene itself (scenery, characters, captions, slow zoom;
+no paid image service) and also makes 3 cliffhanger Shorts. `python story.py autopilot` does the same and uploads.
+Edit `cast.json` to change the series name and characters. Episodes alternate between light suspense and comedy.
+Set the repo variable `MODE=explainer` to run the money/rights explainers instead.
+The drawn visuals are deliberately simple; quality comes from the story and voice. Upgrade visuals later if the channel grows.

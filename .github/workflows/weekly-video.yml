@@ -32,11 +32,12 @@ jobs:
           HINDI_FONT: /usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf
           YT_PRIVACY: ${{ vars.YT_PRIVACY || 'private' }}
           NICHE: ${{ vars.NICHE || 'everyday money, rules, rights and how things work in India' }}
-        run: python pipeline.py autopilot
+        run: python ${{ vars.MODE == 'explainer' && 'pipeline.py' || 'story.py' }} autopilot
       - name: Save topic history
         run: |
           git config user.name "video-bot" && git config user.email "video-bot@users.noreply.github.com"
-          git add done.json && git diff --cached --quiet || (git commit -m "Update topic history" && git push)
+          for f in done.json episodes.json; do [ -f "$f" ] && git add "$f"; done
+          git diff --cached --quiet || (git commit -m "Update topic history" && git push)
       - uses: actions/upload-artifact@v4
         if: always()
         with:
