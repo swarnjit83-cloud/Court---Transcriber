@@ -1,0 +1,5 @@
+output/
+client_secret.json
+token.json
+fonts/
+__pycache__/
